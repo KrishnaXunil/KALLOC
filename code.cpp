@@ -7,12 +7,15 @@ class Allocator{
 
 protected:
 
+//protected because we need other allocators to access this but not outside of allocators
 void* m_start_ptr=nullptr;  //hold the start of the memory block
 size_t m_total_size=0;   
+const int x;
 
 public:
 
-Allocator(size_t memory_size):m_total_size(memory_size){
+//member initialisation lists
+Allocator(size_t memory_size,int val):m_total_size(memory_size), x(5){
     Init();
 }
 
@@ -49,6 +52,30 @@ virtual void PrintMemoryMap() const=0;
 
 };
 
+class PoolAllocator: public Allocator{
+
+private:
+
+size_t m_chunksize;
+void* head;
+
+public:
+
+struct Chunk{
+    Chunk* next;
+};
+
+PoolAllocator(size_t memory_size):Allocator(memory_size){
+    size_t num_of_chunks=(memory_size+m_chunksize-1)/m_chunksize;
+
+    head=m_start_ptr;
+
+    for(int i=1;i<=num_of_chunks;i++){
+       Chunk 
+    }
+}
+
+}
 
 class LinearAllocator: public Allocator{
 
@@ -58,13 +85,14 @@ size_t m_offset=0;
 
 public:
 
+//again member initialisation lists
 LinearAllocator(size_t memory_size):Allocator(memory_size){}   //while calling constructor we have to call parent constructor tooooo...
 
 void* Allocate(size_t size,size_t alignment){
 
-    void* cur_address=(static_cast<char*>(m_start_ptr)); //doing static cast into char* moves the start ptr exactly in bytes amount
+    size_t padding=(alignment-(reinterpret_cast<std::uintptr_t>(m_start_ptr)%alignment))%alignment;
 
-    size_t padding=(alignment-(reinterpret_cast<std::uintptr_t>(cur_address)%alignment))%alignment;
+    void* cur_address=((static_cast<char*>(m_start_ptr))+padding); //doing static cast into char* moves the start ptr exactly in bytes amount
 
     if(m_offset+size+padding>m_total_size){
         //here throw some error
@@ -73,7 +101,7 @@ void* Allocate(size_t size,size_t alignment){
 
     else{
         m_offset+=(size+padding);
-        return (static_cast<char*>(cur_address)+padding);
+        return cur_address;
     }
 
     return nullptr;
@@ -87,6 +115,10 @@ void Free(void* memory_ptr){
 
     //here we cant compare pointers with each other so we need to cast them explicitly
     //as void* is an address with no type information and two things without any type cant be compared
+
+    //an idea i had for Free function was to store all instances/range of linearly allocated memeory
+    //and then simply shifting everything to its right, left 
+    //but this would cost in complexity
 
     std::uintptr_t start = reinterpret_cast<std::uintptr_t>(m_start_ptr);
     std::uintptr_t end = start + m_total_size;
@@ -138,43 +170,12 @@ void Reset() {
 
 };
 
+template<typename t>
+void printname(T name){
+    std::cout<<name<<std::endl;
+}
+
 int main() {
-    // 1. Create an allocator with 100 bytes of total RAM
-    std::cout << "Creating Allocator with 100 bytes..." << std::endl;
-    LinearAllocator myAllocator(100); 
-
-    // 2. Test a Valid Allocation (sizeof(int) is usually 4 bytes)
-    std::cout << "Allocating 4 bytes for an Integer..." << std::endl;
-    void* raw_memory = myAllocator.Allocate(sizeof(int), 0); // Alignment 0 for now
-
-    if (raw_memory != nullptr) {
-        // CAST the raw memory to an int* so we can use it
-        int* myNumber = static_cast<int*>(raw_memory);
-        
-        // WRITE to the memory (if this crashes, your allocator is broken)
-        *myNumber = 42; 
-        
-        // READ from the memory
-        std::cout << "Success! Value stored: " << *myNumber << std::endl;
-        std::cout << "Address: " << raw_memory << std::endl;
-    } else {
-        std::cerr << "Allocation failed!" << std::endl;
-    }
-
-    // 3. Test "Out of Memory" (Try to grab 200 bytes, which is > 100)
-    std::cout << "\nAttempting to allocate 200 bytes (should fail)..." << std::endl;
-    void* too_big = myAllocator.Allocate(200, 0);
-
-    if (too_big == nullptr) {
-        std::cout << "Success! The allocator correctly returned nullptr (Out of Memory)." << std::endl;
-    } else {
-        std::cerr << "Failed! The allocator gave us memory we don't have!" << std::endl;
-    }
-
-    //call destructor over this 
-
-    myAllocator.Reset();
-
 
     LinearAllocator myAllocator1(100); // 100 bytes total
 
@@ -182,11 +183,11 @@ int main() {
     myAllocator1.PrintMemoryMap();
 
     std::cout << "2. Allocating 40 bytes..." << std::endl;
-    myAllocator1.Allocate(40, 0);
+    myAllocator1.Allocate(40, 3);
     myAllocator1.PrintMemoryMap();
 
     std::cout << "3. Allocating another 20 bytes..." << std::endl;
-    myAllocator1.Allocate(20, 0);
+    myAllocator1.Allocate(20, 11);
     myAllocator1.PrintMemoryMap();
 
     return 0;
