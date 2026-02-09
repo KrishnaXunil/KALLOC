@@ -10,13 +10,12 @@ protected:
 //protected because we need other allocators to access this but not outside of allocators
 void* m_start_ptr=nullptr;  //hold the start of the memory block
 size_t m_total_size=0;   
-const int x;
 
 public:
 
 //member initialisation lists
-Allocator(size_t memory_size,int val):m_total_size(memory_size), x(5){
-    Init();
+Allocator(size_t memory_size):m_total_size(memory_size){
+     Init();
 }
 
 virtual void* Allocate(size_t size,size_t alignment)=0;
@@ -52,32 +51,91 @@ virtual void PrintMemoryMap() const=0;
 
 };
 
-class PoolAllocator: public Allocator{
-
+class PoolAllocator: protected Allocator{
+    
 private:
 
 size_t m_chunksize;
-void* head;
+
+//revise on what intrusive linked list
+struct chunk{
+    chunk* next;
+};
+
+chunk* chunk_head;
 
 public:
 
-struct Chunk{
-    Chunk* next;
+PoolAllocator(size_t chunk_size,size_t memory_size): m_chunksize(chunk_size),Allocator(memory_size){
+    //now using member initialisation list again and now when parents constructor is called 
+    //i.e Allocator, it will automatically call the init for it and define the starting pointer
+    //for memory allocation i.e [void* m_start_ptr]
+
+    //I will simply divide this memory chunks to smaller chunks leveraging 
+    //the benefit of this constructor
+
+    chunk_head=reinterpret_cast<chunk*>(m_start_ptr);
+
+    chunk* prev=chunk_head;
+
+    size_t num_of_chunks=(memory_size+chunk_size-1)/(chunk_size);
+
+    for(int i=1;i<num_of_chunks;i++){
+        void* location=reinterpret_cast<char*>(prev)+chunk_size;
+        prev->next=reinterpret_cast<chunk*>(location);
+        prev=prev->next;
+    }
+    prev->next=nullptr;
+}
+
+//here we dont care about alignment as we did in linear allocator, because the use of this pool
+//allocator ensures we know the required alignment before only and thus we can adjust our chunk_size 
+//by that alignment, but this alignment cant change at runtime
+
+//in linear allocator alignment gets taken care of at runtime too.....
+void* Allocate(size_t size){
+
+    if(chunk_head==nullptr){
+        std::cerr << "CRITICAL ERROR: No memory left!" << std::endl;
+        return nullptr;
+    }
+    void* memory_to_be_given=chunk_head;
+    chunk_head=chunk_head->next;
+    return memory_to_be_given;
+}
+
+void Free(void* memory_ptr){
+    // void* location=reinterpret_cast<char*>(mempry_ptr);
+
+    char* base_location=static_cast<char*>(m_start_ptr);
+    char* end_location=base_location+m_total_size;
+
+    char* cur_location=static_cast<char*>(memory_ptr);
+
+    size_t offset=cur_location-base_location;
+
+    if(cur_location>=base_location && cur_location<end_location && offset%m_chunksize==0){
+        chunk* new_head=reinterpret_cast<chunk*>(memory_ptr);
+        new_head->next=chunk_head;
+        chunk_head=new_head;
+    }
+
+    else if(offset%m_chunksize!=0){
+        std::cerr << "CRITICAL ERROR: Pointer is misaligned in the memory pool!" << std::endl;
+       return; // Reject it
+    }
+
+    else{
+       std::cerr << "CRITICAL ERROR: Pointer is outside of memory pool!" << std::endl;
+       return; // Reject it
+    }
+
+} 
+
 };
 
-PoolAllocator(size_t memory_size):Allocator(memory_size){
-    size_t num_of_chunks=(memory_size+m_chunksize-1)/m_chunksize;
 
-    head=m_start_ptr;
-
-    for(int i=1;i<=num_of_chunks;i++){
-       Chunk 
-    }
-}
-
-}
-
-class LinearAllocator: public Allocator{
+class LinearAllocator: protected Allocator{
 
 private:
 
