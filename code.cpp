@@ -2,6 +2,8 @@
 #include<cstddef>
 #include<cstdint>
 #include<sys/mman.h>
+#include <vector>
+#include <iomanip>
 
 class Allocator{
 
@@ -93,7 +95,7 @@ PoolAllocator(size_t chunk_size,size_t memory_size): m_chunksize(chunk_size),All
 //by that alignment, but this alignment cant change at runtime
 
 //in linear allocator alignment gets taken care of at runtime too.....
-void* Allocate(size_t size){
+void* Allocate(size_t size,size_t alignment=8){
 
     if(chunk_head==nullptr){
         std::cerr << "CRITICAL ERROR: No memory left!" << std::endl;
@@ -131,6 +133,65 @@ void Free(void* memory_ptr){
     }
 
 } 
+
+void PrintMemoryMap() const override {
+    // 1. Calculate how many total chunks we have in the pool
+    // (Assuming m_total_size is available from the parent Allocator class)
+    size_t num_chunks = m_total_size / m_chunksize;
+
+    // 2. Create a temporary map to track status (Default: false = USED)
+    std::vector<bool> is_chunk_free(num_chunks, false);
+
+    // 3. Walk the Free List to find which blocks are actually available
+    chunk* current = chunk_head;
+    size_t free_count = 0;
+
+    while (current != nullptr) {
+        // MATH: Calculate the index of this chunk based on its address
+        // Index = (Address of Chunk - Start of Pool) / Size of Chunk
+        char* start_ptr = static_cast<char*>(m_start_ptr);
+        char* chunk_ptr = reinterpret_cast<char*>(current);
+        
+        size_t byte_offset = chunk_ptr - start_ptr;
+        size_t chunk_index = byte_offset / m_chunksize;
+
+        // Safety check: Ensure index is valid
+        if (chunk_index < num_chunks) {
+            is_chunk_free[chunk_index] = true; // Mark this specific block as FREE
+            free_count++;
+        }
+        
+        // Move to next free block
+        current = current->next;
+    }
+
+    // 4. Print the Visualization
+    std::cout << "\n[ Pool Memory Map ]" << std::endl;
+    std::cout << "------------------------------------------------" << std::endl;
+    
+    for (size_t i = 0; i < num_chunks; ++i) {
+        // Optional: Print a newline every 10 blocks for readability
+        if (i > 0 && i % 10 == 0) std::cout << "\n";
+
+        if (is_chunk_free[i]) {
+            std::cout << "[ . ] "; // . means Empty/Free
+        } else {
+            std::cout << "[ # ] "; // # means Occupied/Used
+        }
+    }
+    std::cout << "\n------------------------------------------------" << std::endl;
+    
+    // 5. Print Stats
+    size_t used_count = num_chunks - free_count;
+    double usage = (static_cast<double>(used_count) / num_chunks) * 100.0;
+    
+    std::cout << "Total Blocks: " << num_chunks 
+              << " | Used: " << used_count 
+              << " | Free: " << free_count 
+              << " (" << std::fixed << std::setprecision(1) << usage << "% Full)" 
+              << std::endl;
+    std::cout << std::endl;
+}
 
 };
 
@@ -228,25 +289,61 @@ void Reset() {
 
 };
 
-template<typename t>
-void printname(T name){
-    std::cout<<name<<std::endl;
-}
+// template<typename t>
+// void printname(T name){
+//     std::cout<<name<<std::endl;
+// }
+
+// int main() {
+
+//     LinearAllocator myAllocator1(100); // 100 bytes total
+
+//     std::cout << "1. Initial State:" << std::endl;
+//     myAllocator1.PrintMemoryMap();
+
+//     std::cout << "2. Allocating 40 bytes..." << std::endl;
+//     myAllocator1.Allocate(40, 3);
+//     myAllocator1.PrintMemoryMap();
+
+//     std::cout << "3. Allocating another 20 bytes..." << std::endl;
+//     myAllocator1.Allocate(20, 11);
+//     myAllocator1.PrintMemoryMap();
+
+//     return 0;
+// }
 
 int main() {
+    // 1. Setup: Create a pool for 10 integers (chunk size 8, total size 80)
+    // We use size 80 bytes, so we get 10 chunks of 8 bytes.
+    const size_t CHUNK_SIZE = 8;
+    const size_t TOTAL_SIZE = 80;
+    
+    PoolAllocator allocator1(CHUNK_SIZE, TOTAL_SIZE);
 
-    LinearAllocator myAllocator1(100); // 100 bytes total
+    std::cout << "1. Initial State (Everything Free):" << std::endl;
+    allocator1.PrintMemoryMap();
 
-    std::cout << "1. Initial State:" << std::endl;
-    myAllocator1.PrintMemoryMap();
+    // 2. Allocate 3 blocks
+    void* p1 = allocator1.Allocate(CHUNK_SIZE);
+    void* p2 = allocator1.Allocate(CHUNK_SIZE);
+    void* p3 = allocator1.Allocate(CHUNK_SIZE);
 
-    std::cout << "2. Allocating 40 bytes..." << std::endl;
-    myAllocator1.Allocate(40, 3);
-    myAllocator1.PrintMemoryMap();
+    std::cout << "2. After Allocating 3 Blocks (Should see 3 used [#]):" << std::endl;
+    allocator1.PrintMemoryMap();
 
-    std::cout << "3. Allocating another 20 bytes..." << std::endl;
-    myAllocator1.Allocate(20, 11);
-    myAllocator1.PrintMemoryMap();
+    // 3. Free the Middle Block (p2)
+    // This demonstrates that the Free List works (LIFO) and the map updates correctly
+    allocator1.Free(p2);
+
+    std::cout << "3. After Freeing Middle Block (p2) (Should see a hole [.]):" << std::endl;
+    allocator1.PrintMemoryMap();
+
+    // 4. Re-allocate
+    // It should grab the hole we just created because it was added to the front of the list!
+    void* p4 = allocator1.Allocate(CHUNK_SIZE);
+    
+    std::cout << "4. After Re-allocating (Should fill the hole):" << std::endl;
+    allocator1.PrintMemoryMap();
 
     return 0;
 }
