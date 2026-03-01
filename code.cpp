@@ -53,6 +53,84 @@ virtual void PrintMemoryMap() const=0;
 
 };
 
+//a mini version of malloc it seems
+//this maybe implementation heavy and also may require testing over different search algorithms
+class FreeListAllocator: protected Allocator{
+     
+private:
+
+//again intrusive linked list only
+struct AllocationHeader{
+    size_t size;
+    //adjustment stores the alignment issue
+    size_t adjustment;
+    AllocationHeader* next;
+};
+
+AllocationHeader* head;
+
+public:
+
+FreeListAllocator(size_t memory_size): Allocator(memory_size){
+    head=reinterpret_cast<AllocationHeader*>(m_start_ptr);
+    head->size=memory_size;
+    head->adjustment=0;
+    head->next=nullptr;
+}
+
+void* Allocate(size_t size,size_t alignment) override {
+    //sizeof operator automatically returns size_t compatible datatype
+
+
+    size_t required=size+(sizeof(AllocationHeader));
+
+    AllocationHeader* cur=head;
+
+    while(cur!=nullptr){
+        if(cur->size>=required){
+           break;
+        }
+        else{
+            cur=cur->next;
+        }
+    }
+
+    if(cur==nullptr){
+        //return some error codes
+        std::cerr << "CRITICAL ERROR: No memory left!" << std::endl;
+        return nullptr;
+    }
+
+    else{
+       size_t left=cur->size-required;
+
+       char* pointer=cur+static_cast<char*>(required);
+       pointer++;
+       
+       //here we are splitting the available block
+       //only when it can hold another instance of 
+       //Allocation Header else no space could be allocated there 
+
+       if(left<=sizeof(AllocationHeader)){
+          return (static_cast<void*>cur);
+       }
+
+       else{
+          AllocationHeader* split_right=reinterpret_cast<AllocationHeader*>(pointer);
+          split_right->size=left;
+          split_right->next=nullptr;
+          split_right->adjustment=0;
+          cur->next=split_right;
+          head=split_right;
+       }
+    }
+
+
+}
+
+
+}
+
 class PoolAllocator: protected Allocator{
     
 private:
@@ -68,7 +146,7 @@ chunk* chunk_head;
 
 public:
 
-PoolAllocator(size_t chunk_size,size_t memory_size): m_chunksize(chunk_size),Allocator(memory_size){
+PoolAllocator(size_t chunk_size,size_t memory_size): Allocator(memory_size),m_chunksize(chunk_size){
     //now using member initialisation list again and now when parents constructor is called 
     //i.e Allocator, it will automatically call the init for it and define the starting pointer
     //for memory allocation i.e [void* m_start_ptr]
@@ -95,7 +173,7 @@ PoolAllocator(size_t chunk_size,size_t memory_size): m_chunksize(chunk_size),All
 //by that alignment, but this alignment cant change at runtime
 
 //in linear allocator alignment gets taken care of at runtime too.....
-void* Allocate(size_t size,size_t alignment=8){
+void* Allocate(size_t size,size_t alignment=8) override {
 
     if(chunk_head==nullptr){
         std::cerr << "CRITICAL ERROR: No memory left!" << std::endl;
@@ -207,8 +285,9 @@ public:
 //again member initialisation lists
 LinearAllocator(size_t memory_size):Allocator(memory_size){}   //while calling constructor we have to call parent constructor tooooo...
 
-void* Allocate(size_t size,size_t alignment){
-
+void* Allocate(size_t size,size_t alignment) override {
+    
+    //again dividing by alignment so that padding becomes zero if already alignment satisfies 
     size_t padding=(alignment-(reinterpret_cast<std::uintptr_t>(m_start_ptr)%alignment))%alignment;
 
     void* cur_address=((static_cast<char*>(m_start_ptr))+padding); //doing static cast into char* moves the start ptr exactly in bytes amount
