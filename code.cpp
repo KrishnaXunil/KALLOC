@@ -63,6 +63,9 @@ private:
 struct AllocationHeader{
     size_t size;
     //adjustment stores the alignment issue
+    //this will help us in FREE fucntion when we will 
+    //have to recalculate the start of the memory area using 
+    //the provided pointer-padding-header_size
     size_t adjustment;
     AllocationHeader* next;
 };
@@ -80,8 +83,7 @@ FreeListAllocator(size_t memory_size): Allocator(memory_size){
 
 void* Allocate(size_t size,size_t alignment) override {
     //sizeof operator automatically returns size_t compatible datatype
-
-
+    
     size_t required=size+(sizeof(AllocationHeader));
 
     AllocationHeader* cur=head;
@@ -102,10 +104,24 @@ void* Allocate(size_t size,size_t alignment) override {
     }
 
     else{
-       size_t left=cur->size-required;
 
-       char* pointer=cur+static_cast<char*>(required);
-       pointer++;
+       size_t padding=(alignment-reinterpret_cast<size_t>(cur)%alignment)%alignment;
+
+       size_t left=(cur->size)-required-padding;
+
+       //here the space which is wasted because of alignment is the internal fragmentation
+       //and this will always be there 
+       //i can implement something but here that headershould also be accomodated which is not possible
+       //for now may see it later----------------------------------??>>>>. check this out later
+
+       if(left<size){
+        //return some error codes
+        std::cerr << "CRITICAL ERROR: No memory left for now , try again later!" << std::endl;
+        return nullptr;
+       }
+
+       else{
+        char* pointer=reinterpret_cast<char*>(cur)+padding;
        
        //here we are splitting the available block
        //only when it can hold another instance of 
@@ -119,17 +135,26 @@ void* Allocate(size_t size,size_t alignment) override {
           AllocationHeader* split_right=reinterpret_cast<AllocationHeader*>(pointer);
           split_right->size=left;
           split_right->next=nullptr;
-          split_right->adjustment=0;
+          split_right->adjustment=padding;
+          split_right=reinterpret_cast<AllocationHeader*>(reinterpret_cast<size_t>split_right+padding);
           cur->next=split_right;
           head=split_right;
+          return pointer;
        }
+       }
+
     }
 
-
 }
 
-
+void Free(void* memory_ptr) override {
+    AllocationHeader* cur=reinterpret_cast<AllocationHeader*>(reinterpret_cast<size_t>(memory_ptr)-sizeof(AllocationHeader));
+    cur=reinterpret_cast<AllocationHeader*>(reinterpret_cast<size_t>(cur)-(cur->padding));
+    cur->next=head;
+    head=cur;
 }
+
+};
 
 class PoolAllocator: protected Allocator{
     
@@ -179,12 +204,29 @@ void* Allocate(size_t size,size_t alignment=8) override {
         std::cerr << "CRITICAL ERROR: No memory left!" << std::endl;
         return nullptr;
     }
-    void* memory_to_be_given=chunk_head;
-    chunk_head=chunk_head->next;
-    return memory_to_be_given;
+
+    size_t padding=(alignment-reinterpret_cast<size_t>(chunk_head)%alignment)%alignment;
+    
+    //this is the original head which was there with our linked list already
+    //not the new one with the padding....
+    chunk* actual_head=chunk_head;
+
+    chunk_head=reinterpret_cast<chunk*>(reinterpret_cast<char*>(chunk_head)+padding);
+
+    if(m_chunksize-padding<size_t){
+        std::cerr << "This chunk cant be allocated for now try later!" << std::endl;
+        return nullptr;
+    }
+
+    else{
+       void* memory_to_be_given=chunk_head;
+       chunk_head=actual_head->next;
+       return memory_to_be_given;
+    }
+    
 }
 
-void Free(void* memory_ptr){
+void Free(void* memory_ptr) override {
     // void* location=reinterpret_cast<char*>(mempry_ptr);
 
     char* base_location=static_cast<char*>(m_start_ptr);
@@ -305,7 +347,7 @@ void* Allocate(size_t size,size_t alignment) override {
     return nullptr;
 }
 
-void Free(void* memory_ptr){
+void Free(void* memory_ptr) override {
 
     //reinterpret cast does this
     //I know this variable is a Pointer (a memory address). I want you to 
