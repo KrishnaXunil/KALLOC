@@ -55,6 +55,8 @@ virtual void PrintMemoryMap() const=0;
 
 //a mini version of malloc it seems
 //this maybe implementation heavy and also may require testing over different search algorithms
+
+//implement coalescing later, it maybe a bit difficult for now
 class FreeListAllocator: protected Allocator{
      
 private:
@@ -152,6 +154,32 @@ void Free(void* memory_ptr) override {
     cur=reinterpret_cast<AllocationHeader*>(reinterpret_cast<size_t>(cur)-(cur->padding));
     cur->next=head;
     head=cur;
+}
+
+void PrintMemoryMap() const override {
+    std::cout << "\n================= FREE LIST MEMORY MAP =================\n";
+    std::cout << "Total Managed Memory: " << m_total_size << " bytes\n";
+    std::cout << "Raw Start Address:    " << m_start_ptr << "\n";
+    std::cout << "--------------------------------------------------------\n";
+    
+    const AllocationHeader* curr = head;
+    int block_index = 0;
+    
+    if (curr == nullptr) {
+        std::cout << "[!] The free list is empty (Memory is full or list is broken).\n";
+    }
+    
+    // Iterate through the free blocks
+    while (curr != nullptr) {
+        std::cout << "Free Block [" << block_index << "] "
+                  << "| Address: " << static_cast<const void*>(curr) << " "
+                  << "| Size: " << std::setw(6) << curr->size << " bytes "
+                  << "| Next: " << static_cast<const void*>(curr->next) << "\n";
+        
+        curr = curr->next;
+        block_index++;
+    }
+    std::cout << "========================================================\n\n";
 }
 
 };
@@ -433,38 +461,86 @@ void Reset() {
 //     return 0;
 // }
 
+// int main() {
+//     // 1. Setup: Create a pool for 10 integers (chunk size 8, total size 80)
+//     // We use size 80 bytes, so we get 10 chunks of 8 bytes.
+//     const size_t CHUNK_SIZE = 8;
+//     const size_t TOTAL_SIZE = 80;
+    
+//     PoolAllocator allocator1(CHUNK_SIZE, TOTAL_SIZE);
+
+//     std::cout << "1. Initial State (Everything Free):" << std::endl;
+//     allocator1.PrintMemoryMap();
+
+//     // 2. Allocate 3 blocks
+//     void* p1 = allocator1.Allocate(CHUNK_SIZE);
+//     void* p2 = allocator1.Allocate(CHUNK_SIZE);
+//     void* p3 = allocator1.Allocate(CHUNK_SIZE);
+
+//     std::cout << "2. After Allocating 3 Blocks (Should see 3 used [#]):" << std::endl;
+//     allocator1.PrintMemoryMap();
+
+//     // 3. Free the Middle Block (p2)
+//     // This demonstrates that the Free List works (LIFO) and the map updates correctly
+//     allocator1.Free(p2);
+
+//     std::cout << "3. After Freeing Middle Block (p2) (Should see a hole [.]):" << std::endl;
+//     allocator1.PrintMemoryMap();
+
+//     // 4. Re-allocate
+//     // It should grab the hole we just created because it was added to the front of the list!
+//     void* p4 = allocator1.Allocate(CHUNK_SIZE);
+    
+//     std::cout << "4. After Re-allocating (Should fill the hole):" << std::endl;
+//     allocator1.PrintMemoryMap();
+
+//     return 0;
+// }
+
 int main() {
-    // 1. Setup: Create a pool for 10 integers (chunk size 8, total size 80)
-    // We use size 80 bytes, so we get 10 chunks of 8 bytes.
-    const size_t CHUNK_SIZE = 8;
-    const size_t TOTAL_SIZE = 80;
+    // 1. Setup: Grab a larger chunk of memory (e.g., 1024 bytes)
+    // Unlike a Pool Allocator, we don't define a chunk size, because chunks can be any size!
+    const size_t TOTAL_SIZE = 1024;
+    const size_t ALIGNMENT = 8;
     
-    PoolAllocator allocator1(CHUNK_SIZE, TOTAL_SIZE);
+    std::cout << "Starting Free List Allocator Test...\n";
+    FreeListAllocator allocator(TOTAL_SIZE);
 
-    std::cout << "1. Initial State (Everything Free):" << std::endl;
-    allocator1.PrintMemoryMap();
+    std::cout << "1. Initial State (Should see ONE giant free block):" << std::endl;
+    allocator.PrintMemoryMap();
 
-    // 2. Allocate 3 blocks
-    void* p1 = allocator1.Allocate(CHUNK_SIZE);
-    void* p2 = allocator1.Allocate(CHUNK_SIZE);
-    void* p3 = allocator1.Allocate(CHUNK_SIZE);
+    // 2. Allocate 3 blocks of DIFFERENT sizes
+    std::cout << "\nAllocating Block A (64 bytes), B (128 bytes), and C (256 bytes)..." << std::endl;
+    void* pA = allocator.Allocate(64, ALIGNMENT);
+    void* pB = allocator.Allocate(128, ALIGNMENT);
+    void* pC = allocator.Allocate(256, ALIGNMENT);
 
-    std::cout << "2. After Allocating 3 Blocks (Should see 3 used [#]):" << std::endl;
-    allocator1.PrintMemoryMap();
+    std::cout << "2. After Allocating 3 Blocks:" << std::endl;
+    // You should only see ONE free block left: the remaining space at the very end of your 1024 bytes.
+    allocator.PrintMemoryMap();
 
-    // 3. Free the Middle Block (p2)
-    // This demonstrates that the Free List works (LIFO) and the map updates correctly
-    allocator1.Free(p2);
+    // 3. Free the Middle Block (pB - 128 bytes)
+    std::cout << "\nFreeing Middle Block B (128 bytes)..." << std::endl;
+    // This demonstrates that the Free List can handle random free orders and tracks the holes.
+    allocator.Free(pB);
 
-    std::cout << "3. After Freeing Middle Block (p2) (Should see a hole [.]):" << std::endl;
-    allocator1.PrintMemoryMap();
+    std::cout << "3. After Freeing Middle Block B:" << std::endl;
+    // You should now see TWO free blocks: The hole where B used to be, and the remaining space at the end.
+    allocator.PrintMemoryMap();
 
-    // 4. Re-allocate
-    // It should grab the hole we just created because it was added to the front of the list!
-    void* p4 = allocator1.Allocate(CHUNK_SIZE);
+    // 4. Re-allocate a smaller block (32 bytes)
+    std::cout << "\nAllocating Block D (32 bytes)..." << std::endl;
+    // It should iterate, find the 128-byte hole we just created, put Block D there, and SPLIT the difference!
+    void* pD = allocator.Allocate(32, ALIGNMENT);
     
-    std::cout << "4. After Re-allocating (Should fill the hole):" << std::endl;
-    allocator1.PrintMemoryMap();
+    std::cout << "4. After Re-allocating Block D:" << std::endl;
+    // The first free block (the hole) should now be smaller, because D took up part of it.
+    allocator.PrintMemoryMap();
+
+    // Clean up to prevent actual OS memory leaks during testing
+    allocator.Free(pA);
+    allocator.Free(pC);
+    allocator.Free(pD);
 
     return 0;
 }
