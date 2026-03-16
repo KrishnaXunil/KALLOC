@@ -84,8 +84,10 @@ FreeListAllocator(size_t memory_size): Allocator(memory_size){
 }
 
 void* Allocate(size_t size, size_t alignment) override {
+
     size_t required = size + sizeof(AllocationHeader);
     AllocationHeader* prev = nullptr;
+
     AllocationHeader* cur = head;
 
     // ... (Your existing search loop) ...
@@ -101,12 +103,12 @@ void* Allocate(size_t size, size_t alignment) override {
     // Calculate where the header and data will live
     char* block_start = reinterpret_cast<char*>(cur);
     char* data_ptr = block_start + padding + sizeof(AllocationHeader);
-    AllocationHeader* header_ptr = reinterpret_cast<AllocationHeader*>(data_ptr - sizeof(AllocationHeader));
+    AllocationHeader* header_ptr = reinterpret_cast<AllocationHeader*>(block_start+padding);
 
     // Determine splitting
     size_t allocated_size = required + padding;
 
-    if (left > required + sizeof(AllocationHeader)) {
+    if (left > sizeof(AllocationHeader)) {
         // Splitting logic
         AllocationHeader* next_free = reinterpret_cast<AllocationHeader*>(block_start + allocated_size);
         next_free->size = total_block_size - allocated_size;
@@ -122,7 +124,13 @@ void* Allocate(size_t size, size_t alignment) override {
 
     // --- THE FIX: STORE METADATA AT BOTH ENDS ---
     // 1. Tag the physical start with the padding size for the Map Walk
-    *(reinterpret_cast<size_t*>(block_start)) = padding;
+
+    if(padding!=0){
+        *(reinterpret_cast<uint8_t*>(block_start)) = padding;
+        *(reinterpret_cast<uint8_t*>(block_start)) = padding*2;
+        std::cout<<"Hello"<<std::endl;
+        std::cout<<*(reinterpret_cast<size_t*>(block_start))<<std::endl;
+    }
 
     // 2. Setup the header for the Free function
     header_ptr->size = allocated_size;
@@ -160,6 +168,9 @@ void PrintMemoryMap() const override {
     std::cout << "\n================ PHYSICAL MEMORY MAP ================\n";
     std::cout << "Total Size: " << m_total_size << " bytes | Start: " << m_start_ptr << "\n";
     std::cout << "-----------------------------------------------------\n";
+    
+
+    std::cout<<(int)*(reinterpret_cast<uint8_t*>(m_start_ptr))<<std::endl;
 
     uintptr_t current_address = reinterpret_cast<uintptr_t>(m_start_ptr);
     uintptr_t end_address = current_address + m_total_size;
@@ -186,41 +197,35 @@ void PrintMemoryMap() const override {
             block_size = h->size;
             adjustment = 0;
         } else {
-            // If allocated, we use your "padding tag" logic
-            // We read the first few bytes. In your logic, this is either 'padding' or 'header.size'
-            size_t first_val = *(reinterpret_cast<size_t*>(current_address));
-            AllocationHeader* h = reinterpret_cast<AllocationHeader*>(reinterpret_cast<size_t>(current_address)+first_val);
+            // Read the header assuming it sits at the start
+            AllocationHeader* h = reinterpret_cast<AllocationHeader*>(current_address);
 
-            // If the header sits at the start, h->size will match our walk logic
-            // We assume h->adjustment == 0 means the header is at the start
-            // if (h->adjustment == 0) {
-            //     block_size = h->size;
-            //     adjustment = 0;
-            // } else {
-                // If adjustment != 0, then first_val is actually the padding (adjustment)
-                std::cout<<"FUCK1"<<std::endl;
-                adjustment = first_val; 
-                std::cout<<"FUCK2"<<std::endl;
-                std::cout<<first_val<<std::endl;
-                std::cout<<"FUCK3"<<std::endl;
+            if (h->adjustment == 0) {
                 block_size = h->size;
-                std::cout<<"FUCK4"<<std::endl;
-                std::cout<<block_size<<std::endl;
-            // }
+                adjustment = 0;
+            } else {
+                // CLEAN DEREFERENCE: Cast uintptr_t to a uint8_t pointer, then dereference.
+                uint8_t first_val = (int)(*reinterpret_cast<uint8_t*>(current_address));
+                
+                adjustment = first_val; 
+                
+                // CLEAN POINTER MATH: uintptr_t is an integer. Just add the adjustment, THEN cast.
+                h = reinterpret_cast<AllocationHeader*>(current_address + adjustment);
+                
+                block_size = h->size;
+            }
         }
-
-        // std::cout<<"FUCK2"<<std::endl;
 
         // --- THE ACTUAL PRINTING STATEMENTS ---
         std::cout << "Block [" << std::setw(2) << block_count++ << "] "
-                  << "Addr: " << (void*)current_address << " | "
+                  << "Addr: " << reinterpret_cast<void*>(current_address) << " | "
                   << "Size: " << std::setw(6) << block_size << " | "
                   << "Status: " << (is_free ? "[ FREE ]" : "[ALLOCD]") 
                   << " | Padding: " << adjustment << "\n";
 
         // Safety break for corrupted memory
         if (block_size == 0) {
-            std::cout << "[!] CRITICAL: Block size 0 at " << (void*)current_address << ". Breaking walk.\n";
+            std::cout << "[!] CRITICAL: Block size 0 at " << reinterpret_cast<void*>(current_address) << ". Breaking walk.\n";
             break;
         }
 
@@ -228,6 +233,7 @@ void PrintMemoryMap() const override {
     }
     std::cout << "=====================================================\n\n";
 }
+
 
 };
 
@@ -553,8 +559,6 @@ int main() {
     std::cout << "Starting Free List Allocator Test...\n";
     FreeListAllocator allocator(TOTAL_SIZE);
 
-
-
     std::cout << "1. Initial State (Should see ONE giant free block):" << std::endl;
     allocator.PrintMemoryMap();
 
@@ -563,8 +567,8 @@ int main() {
     // 2. Allocate 3 blocks of DIFFERENT sizes
     std::cout << "\nAllocating Block A (64 bytes), B (128 bytes), and C (256 bytes)..." << std::endl;
     void* pA = allocator.Allocate(64, 7);
-    void* pB = allocator.Allocate(128, ALIGNMENT);
-    void* pC = allocator.Allocate(256, ALIGNMENT);
+    // void* pB = allocator.Allocate(128, ALIGNMENT);
+    // void* pC = allocator.Allocate(256, ALIGNMENT);
 
     // return 0;
 
@@ -572,12 +576,12 @@ int main() {
     // You should only see ONE free block left: the remaining space at the very end of your 1024 bytes.
     allocator.PrintMemoryMap();
 
-    // return 0;
+    return 0;
 
     // 3. Free the Middle Block (pB - 128 bytes)
     std::cout << "\nFreeing Middle Block B (128 bytes)..." << std::endl;
     // This demonstrates that the Free List can handle random free orders and tracks the holes.
-    allocator.Free(pB);
+    // allocator.Free(pB);
 
     std::cout << "3. After Freeing Middle Block B:" << std::endl;
     // You should now see TWO free blocks: The hole where B used to be, and the remaining space at the end.
@@ -597,7 +601,7 @@ int main() {
     // Clean up to prevent actual OS memory leaks during testing
     allocator.Free(pA);
     allocator.PrintMemoryMap();
-    allocator.Free(pC);
+    // allocator.Free(pC);
     allocator.PrintMemoryMap();
     allocator.Free(pD);
     allocator.PrintMemoryMap();
