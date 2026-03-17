@@ -127,7 +127,7 @@ void* Allocate(size_t size, size_t alignment) override {
 
     if(padding!=0){
         *(reinterpret_cast<uint8_t*>(block_start)) = padding;
-        *(reinterpret_cast<uint8_t*>(block_start)) = padding*2;
+        // *(reinterpret_cast<uint8_t*>(block_start)) = padding*2;
         std::cout<<"Hello"<<std::endl;
         std::cout<<*(reinterpret_cast<size_t*>(block_start))<<std::endl;
     }
@@ -567,8 +567,8 @@ int main() {
     // 2. Allocate 3 blocks of DIFFERENT sizes
     std::cout << "\nAllocating Block A (64 bytes), B (128 bytes), and C (256 bytes)..." << std::endl;
     void* pA = allocator.Allocate(64, 7);
-    // void* pB = allocator.Allocate(128, ALIGNMENT);
-    // void* pC = allocator.Allocate(256, ALIGNMENT);
+    void* pB = allocator.Allocate(128, 7);
+    void* pC = allocator.Allocate(256, 7);
 
     // return 0;
 
@@ -576,12 +576,12 @@ int main() {
     // You should only see ONE free block left: the remaining space at the very end of your 1024 bytes.
     allocator.PrintMemoryMap();
 
-    return 0;
+    //  return 0;
 
     // 3. Free the Middle Block (pB - 128 bytes)
     std::cout << "\nFreeing Middle Block B (128 bytes)..." << std::endl;
     // This demonstrates that the Free List can handle random free orders and tracks the holes.
-    // allocator.Free(pB);
+    allocator.Free(pB);
 
     std::cout << "3. After Freeing Middle Block B:" << std::endl;
     // You should now see TWO free blocks: The hole where B used to be, and the remaining space at the end.
@@ -598,10 +598,12 @@ int main() {
     // The first free block (the hole) should now be smaller, because D took up part of it.
     allocator.PrintMemoryMap();
 
+    // return 0;
+
     // Clean up to prevent actual OS memory leaks during testing
     allocator.Free(pA);
     allocator.PrintMemoryMap();
-    // allocator.Free(pC);
+    allocator.Free(pC);
     allocator.PrintMemoryMap();
     allocator.Free(pD);
     allocator.PrintMemoryMap();
