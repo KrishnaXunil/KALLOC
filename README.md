@@ -6,7 +6,7 @@ The goal of this project is to understand how memory allocators work internally 
 
 ## Credits
 
-The initial step-by-step development plan was generated with the help of **Google Gemini**. The implementation, experimentation, and further extensions are part of this project.
+The initial step-by-step development plan was generated with the help of **Google Gemini**. The implementation, experimentation, and further extensions are part of this project although entire implementation was an individual effort.
 
 ## Project Overview
 
