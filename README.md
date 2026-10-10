@@ -1,138 +1,378 @@
-I had this project in mind but did not know what steps to follow so I asked Gemini to create a step by step plan for making custom memory allocator.
+# Custom Memory Allocator in C++
 
-CUSTOM MEMORY ALLOCATOR IN C++, GIVING USERS CHOICE TO MAKE THEIR OWN MEMORY ALLOCATOR
+A customizable memory allocation library in C++ that allows users to choose different memory allocation strategies based on their application's requirements.
 
-CREDITS-”GEMINI”
+The goal of this project is to understand how memory allocators work internally and implement multiple allocation strategies behind a common interface, allowing users to switch between them without changing application-level code.
 
-Module 1: The Contract (The Interface)
-Goal: Create a common definition that allows your program to treat all allocators exactly the same, even though they work differently under the hood.
-Concept: Polymorphism & Abstract Base Classes. You need a parent class that defines the rules, but implements no logic itself.
-Research Topics:
-    • C++ Pure Virtual Functions (virtual void func() = 0;).
-    • C++ Virtual Destructors (Why are they necessary in base classes?).
-    • size_t and void* types.
-Implementation Checklist:
-    1. [ ] Create a class named Allocator.
-    2. [ ] Add a protected variable m_start_ptr (to hold the start of the memory block) and m_total_size.
-    3. [ ] Define a pure virtual method Allocate that takes a size and alignment, and returns a void*.
-    4. [ ] Define a pure virtual method Free that takes a void*.
-    5. [ ] Define a virtual method Init to pre-allocate the big chunk of memory (using malloc) that your allocator will manage.
+## Credits
 
-Module 2: The Linear Allocator (The "Arena")
-Goal: Implement the simplest allocator. It only moves a pointer forward.
-Concept: "Bump Pointer" allocation. You keep an integer (offset) telling you how much memory is used. To allocate, you just return start_ptr + current_offset and increase the offset. You generally cannot free individual blocks here, only reset the whole thing.
-Research Topics:
-    • Pointer Arithmetic in C++ (Adding integers to pointers).
-    • reinterpret_cast vs static_cast.
-Implementation Checklist:
-    1. [ ] Create LinearAllocator inheriting from Allocator.
-    2. [ ] Add a member variable m_offset (starts at 0).
-    3. [ ] Implement Allocate:
-        ◦ Calculate the current address: start_ptr + m_offset.
-        ◦ Check if m_offset + size > total_size (Out of memory check).
-        ◦ Update m_offset += size.
-        ◦ Return the calculated address.
-    4. [ ] Implement Free: Leave this empty (or just verify the pointer exists), as Linear allocators don't free individual items.
+The initial step-by-step development plan was generated with the help of **Google Gemini**. The implementation, experimentation, and further extensions are part of this project.
 
-Module 3: The Pool Allocator (Fixed Size)
-Goal: An allocator optimized for many objects of the exact same size (e.g., Particle effects, projectiles).
-Concept: The "Intrusive Linked List." Since the memory chunks are free, you don't need a separate list to track them. You store the "next free block" pointer inside the free memory block itself.
-Research Topics:
-    • Unions in C++ (specifically anonymous unions).
-    • Intrusive Linked Lists.
-    • "Free List" data structures.
-Implementation Checklist:
-    1. [ ] Create PoolAllocator inheriting from Allocator.
-    2. [ ] Add a member variable m_chunkSize (passed in constructor).
-    3. [ ] Implement Init:
-        ◦ Loop through your memory.
-        ◦ Divide it into chunkSize blocks.
-        ◦ Write a pointer in the first block pointing to the second, the second to the third, etc.
-    4. [ ] Implement Allocate:
-        ◦ Take the first block from the list.
-        ◦ Move the "head" pointer to the next block.
-        ◦ Return the taken block.
-    5. [ ] Implement Free:
-        ◦ Take the pointer being freed.
-        ◦ Write the current "head" address into this block.
-        ◦ Make this block the new "head".
+## Project Overview
 
-Module 4: The Free List Allocator (General Purpose)
-Goal: The complex one. Handles any sreinterpret_cast<AllocationHeader*>
-ize, effectively a mini-version of malloc.
-Concept: You need to embed a "Header" before every allocation to track how big it is. You will need to manage a linked list of free blocks, search that list for a hole big enough, and split that hole.
-Research Topics:
-    • Memory Alignment (Bitwise operations to align to 8 or 16 bytes).
-    • Struct Padding.
-    • First-Fit vs Best-Fit Search Algorithms.
-    • Coalescing (Merging adjacent memory blocks).
-Implementation Checklist:
-    1. [ ] Define a AllocationHeader struct (Size, Adjustment, pointer to next free block).
-    2. [ ] Create FreeListAllocator inheriting from Allocator.
-    3. [ ] Implement Allocate:
-        ◦ Calculate total size needed (User Size + Header Size).
-        ◦ Iterate through the linked list of free blocks.
-        ◦ Find a block where block.size >= needed.
-        ◦ Task: Implement "Splitting" (If the block is too big, cut off the extra and make a new free block).
-        ◦ Return pointer to the body (not the header!).
-    4. [ ] Implement Free:
-        ◦ Math logic: HeaderPtr = UserPtr - sizeof(Header).
-        ◦ Add this block back to the linked list.
-        ◦ Task: Implement "Coalescing" (Check if the new free block is touching another free block and merge them).
+Standard dynamic memory allocation in C++ is typically handled through `new`/`delete` or the underlying memory management facilities. However, different applications have different allocation patterns, and a single allocation strategy may not be optimal for every workload.
 
-Module 5: The Factory (The Generator)
-Goal: A centralized place to create allocators based on user configuration.
-Concept: The Factory Pattern. It isolates the complex logic of "which class do I create?" from the main logic of your program.
-Research Topics:
-    • Factory Method Design Pattern.
-    • C++ enum class.
-    • Static methods.
-Implementation Checklist:
-    1. [ ] Create an enum class AllocatorType { Linear, Pool, FreeList };.
-    2. [ ] Create a struct AllocatorSettings (contains type, total size in bytes, chunk size).
-    3. [ ] Create a class AllocatorFactory.
-    4. [ ] Implement MakeAllocator:
-        ◦ Static method accepting AllocatorSettings.
-        ◦ Use a switch statement on the type.
-        ◦ Return a Allocator* (pointer to the base class).
+This project explores how custom allocators can improve control over memory usage, allocation overhead, fragmentation, and allocation patterns.
 
-Module 6: The User Interface (The Main Loop)
-Goal: A console application to test your creation.
-Research Topics:
-    • std::cin and input validation.
-    • void* casting for std::cout (to print memory addresses).
-Implementation Checklist:
-    1. [ ] Ask user for Type, Size, and specific configs (chunk size).
-    2. [ ] Call AllocatorFactory::MakeAllocator.
-    3. [ ] Enter a while(true) loop.
-    4. [ ] specific commands:
-        ◦ "alloc [size]" -> Calls allocator->Allocate(size). Print the address returned.
-        ◦ "free [address]" -> Calls allocator->Free(address).
-    5. [ ] Bonus: Write a PrintMemoryMap() function in the base class that prints the status of the memory pool (e.g., [UUUU----UU--]) to visualize fragmentation.
-Recommended Development Order
-    1. Module 1 (Interface) + Module 2 (Linear): Get the basics working. You should be able to allocate memory simply.
-    2. Module 6 (UI): Build the UI so you can test Module 2 interactively.
-    3. Module 5 (Factory): Connect the UI to the Factory.
-    4. Module 3 (Pool): Add the Pool logic.
-    5. Module 4 (Free List): The final boss. Save this for last as it is the hardest.
+The library is designed around a common `Allocator` interface and multiple concrete implementations. An `AllocatorFactory` allows users to select an allocator through configuration rather than depending directly on its implementation.
 
+### Key Objectives
 
-My Recommendation
-Start without it, then add it for Module 3.
-    1. Phase 1 (Interface + Linear): Just use a simple g++ command. You only have 2-3 files. It's fast and keeps you focused on the C++ code.
-    2. Phase 3 (Factory + Pool + UI): Once you have 5+ files, typing the compile command gets annoying. That is the perfect moment to "upgrade" to CMake. This mimics the actual evolution of software projects.
+- Implement multiple memory allocation strategies behind a common interface.
+- Understand memory alignment, pointer arithmetic, free lists, and fragmentation.
+- Provide a configurable interface for selecting allocation strategies.
+- Build an interactive console application to test allocations and deallocations.
+- Benchmark different allocators under different workloads.
+- Explore thread safety and compatibility with STL containers.
+- Investigate advanced allocation strategies inspired by production allocators such as Google's TCMalloc.
 
+## Architecture
 
-More implementations
-Add benchmarking more rigid and see how they work well with chrono timsetting
-Make their versions which are compatible with STL based DS
-Make their version which work well with multithreaded applications using mutexes and etc.
-For ex-two threads runnign at the same time might race to increase the offset for allocated memory creating an issue.
-Define various error messages in code and order them in an enum.
-Make a new module to add my own implementations of Googles tcmalloc
-https://medium.com/@kondam.reddy/a-deep-dive-into-building-a-memory-allocator-dd5333a98195
+The project is divided into six modules, each responsible for a specific part of the allocator system.
 
-try to adjust struct padding into mind
+| Module | Component | Responsibility |
+|---|---|---|
+| 1 | `Allocator` | Defines the common allocator interface |
+| 2 | `LinearAllocator` | Provides fast bump-pointer allocation |
+| 3 | `PoolAllocator` | Efficiently allocates fixed-size blocks |
+| 4 | `FreeListAllocator` | Supports variable-sized allocations and block reuse |
+| 5 | `AllocatorFactory` | Creates allocators from user configuration |
+| 6 | Console Interface | Allows users to configure and test allocators interactively |
 
-try to work on the internal fragmentation thing, maybe this method could be used→
-Take note of all the internally fragmentated pointer vs size and then store it and maybe use it later..
+## Module 1: The Contract — Allocator Interface
+
+**Goal:** Define a common interface that allows the application to use different allocators polymorphically.
+
+The base `Allocator` class manages the underlying memory region and defines the operations that every allocator must support.
+
+### Responsibilities
+
+- Maintain the starting address of the memory region using `m_start_ptr`.
+- Track the total available memory using `m_total_size`.
+- Define a pure virtual `Allocate` method accepting a size and alignment.
+- Define a pure virtual `Free` method accepting a memory pointer.
+- Provide initialization and cleanup for the managed memory region.
+- Use a virtual destructor to ensure correct destruction through base-class pointers.
+
+### Concepts to Explore
+
+- Abstract classes and pure virtual functions.
+- Virtual destructors and polymorphism.
+- `size_t` and `void*`.
+- Memory ownership and resource management.
+
+## Module 2: Linear Allocator — The Arena
+
+**Goal:** Implement a simple and fast allocator using a bump pointer.
+
+A linear allocator maintains an offset into a preallocated memory region. Each allocation advances the offset, making allocation inexpensive and predictable.
+
+### Allocation Strategy
+
+1. Calculate the next available address from the base pointer and current offset.
+2. Account for the requested alignment.
+3. Check whether sufficient memory remains.
+4. Return the aligned address and advance the offset.
+5. Reset the allocator to reuse the entire region when individual deallocation is unnecessary.
+
+Individual allocations generally cannot be reclaimed. The entire arena can be reset when its contents are no longer needed.
+
+### Implementation Checklist
+
+- [ ] Implement `LinearAllocator` inheriting from `Allocator`.
+- [ ] Maintain an `m_offset` member initialized to zero.
+- [ ] Implement bounds checking and alignment-aware allocation.
+- [ ] Implement a reset operation.
+- [ ] Define the behavior of `Free` explicitly.
+
+### Concepts to Explore
+
+- Pointer arithmetic.
+- `reinterpret_cast` and `static_cast`.
+- Alignment and padding.
+- Arena allocation and lifetime management.
+
+## Module 3: Pool Allocator — Fixed-Size Allocation
+
+**Goal:** Efficiently allocate and recycle objects of a fixed size, such as particles, projectiles, or frequently created game objects.
+
+The pool allocator divides a preallocated memory region into equal-sized blocks and tracks available blocks using an intrusive free list.
+
+### Allocation Strategy
+
+1. Divide the memory region into appropriately aligned blocks.
+2. Link the available blocks together.
+3. Maintain a pointer to the first available block.
+4. Allocate by removing the first block from the free list.
+5. Deallocate by returning the block to the list.
+
+The free-list link can be stored directly inside an unused block, avoiding a separate allocation for free-list metadata.
+
+### Implementation Checklist
+
+- [ ] Implement `PoolAllocator` inheriting from `Allocator`.
+- [ ] Configure the chunk size and alignment.
+- [ ] Initialize the free list during allocator initialization.
+- [ ] Implement constant-time allocation and deallocation.
+- [ ] Validate that freed pointers belong to the pool and are correctly aligned.
+- [ ] Handle exhaustion of available blocks.
+
+### Concepts to Explore
+
+- Intrusive linked lists.
+- Free-list data structures.
+- Unions and object lifetime rules.
+- Alignment requirements for metadata and allocated objects.
+
+## Module 4: Free List Allocator — General-Purpose Allocation
+
+**Goal:** Support variable-sized allocations and reuse freed memory blocks.
+
+This allocator maintains a linked list of available memory blocks. It searches for a suitable block, allocates the requested space, and splits unused portions when possible.
+
+### Core Components
+
+- **Free block metadata:** Tracks the size of each available block and the next free block.
+- **Allocation header:** Stores information required to recover the allocation's metadata during deallocation.
+- **Placement and alignment logic:** Ensures returned addresses meet the requested alignment.
+- **Block splitting:** Divides a sufficiently large free block into an allocated portion and a remaining free portion.
+- **Coalescing:** Merges adjacent free blocks to reduce external fragmentation.
+
+### Allocation Strategy
+
+1. Calculate the total space required, including alignment adjustments and metadata.
+2. Search the free list using a strategy such as first-fit or best-fit.
+3. Select a suitable block.
+4. Split the block if the remaining space can form a valid free block.
+5. Store the allocation metadata and return the aligned user pointer.
+
+### Deallocation Strategy
+
+1. Recover the allocation metadata associated with the supplied pointer.
+2. Validate the allocation where practical.
+3. Return the block to the free list.
+4. Merge adjacent free blocks when possible.
+
+### Implementation Checklist
+
+- [ ] Define the allocation and free-block metadata structures.
+- [ ] Implement `FreeListAllocator` inheriting from `Allocator`.
+- [ ] Implement aligned allocation and deallocation.
+- [ ] Implement first-fit or best-fit searching.
+- [ ] Implement block splitting.
+- [ ] Implement coalescing of adjacent free blocks.
+- [ ] Handle allocation failures and invalid frees.
+- [ ] Track fragmentation and metadata overhead.
+
+### Concepts to Explore
+
+- Memory alignment and bitwise operations.
+- Structure padding and layout.
+- First-fit versus best-fit algorithms.
+- Internal versus external fragmentation.
+- Free-list organization and block coalescing.
+
+## Module 5: The Factory — Allocator Creation
+
+**Goal:** Separate allocator selection and construction from the rest of the application.
+
+The factory creates an allocator based on a user-provided configuration. This allows the client code to work with the base `Allocator` interface without knowing the concrete implementation.
+
+### Proposed Components
+
+- `AllocatorType`: An enumeration containing `Linear`, `Pool`, and `FreeList`.
+- `AllocatorSettings`: A configuration structure containing the allocator type, total memory size, chunk size, and other strategy-specific settings.
+- `AllocatorFactory`: A class responsible for constructing the requested allocator.
+
+### Implementation Checklist
+
+- [ ] Define the `AllocatorType` enumeration.
+- [ ] Define the `AllocatorSettings` structure.
+- [ ] Implement `AllocatorFactory::MakeAllocator`.
+- [ ] Validate allocator-specific settings.
+- [ ] Handle unsupported types and initialization failures.
+- [ ] Define clear ownership and cleanup rules for created allocators.
+
+## Module 6: The User Interface — Interactive Testing
+
+**Goal:** Build a console application that lets users configure an allocator and experiment with memory operations.
+
+### Proposed Workflow
+
+1. Ask the user to select an allocator type.
+2. Request the total memory size and any strategy-specific parameters.
+3. Create the allocator through `AllocatorFactory`.
+4. Accept allocation and deallocation commands.
+5. Display returned addresses, errors, and memory usage.
+6. Optionally visualize the current memory layout.
+
+### Example Commands
+
+```text
+alloc 64
+alloc 128
+free <address>
+reset
+stats
+map
+exit
+```
+
+The exact command set can evolve as the allocator implementations mature.
+
+### Additional Features
+
+- `stats`: Display total memory, used memory, free memory, and allocation counts where supported.
+- `map`: Visualize allocated and free regions, for example:
+
+```text
+[UUUU----UU--]
+```
+
+Here, `U` represents allocated memory and `-` represents free memory. The visualization should reflect the actual allocation layout rather than assuming all allocators have identical bookkeeping.
+
+- Error reporting for out-of-memory conditions, invalid pointers, and unsupported operations.
+
+## Recommended Development Order
+
+Implement the project incrementally so that each stage builds on a working foundation.
+
+1. **Interface + Linear Allocator:** Establish the base class and get basic allocation working.
+2. **Console Interface:** Build an interactive way to test allocations and reset operations.
+3. **Factory:** Connect allocator selection to the console interface.
+4. **Pool Allocator:** Add efficient fixed-size allocation and recycling.
+5. **Free List Allocator:** Implement variable-size allocation, splitting, and coalescing.
+6. **Testing and Benchmarking:** Compare allocator behavior under different workloads.
+7. **Advanced Extensions:** Explore concurrency, STL compatibility, and fragmentation analysis.
+
+## Build System
+
+### Initial Development
+
+Start with a simple compiler command while the project contains only a few source files.
+
+```bash
+g++ -std=c++17 -Wall -Wextra -g src/*.cpp -Iinclude -o allocator_demo
+./allocator_demo
+```
+
+Adjust the source paths as the repository structure evolves.
+
+### CMake Integration
+
+Introduce CMake once the project contains multiple allocator implementations, headers, tests, and supporting utilities. This makes the project easier to build, maintain, and extend.
+
+A future build configuration can include separate targets for the allocator library, demo application, unit tests, and benchmarks.
+
+## Testing and Benchmarking
+
+A major goal is to compare allocator behavior across realistic workloads rather than assuming that a custom allocator is always faster than standard allocation.
+
+### Benchmarking Plan
+
+Use C++'s `<chrono>` library to measure allocation and deallocation performance.
+
+Benchmark scenarios should include:
+
+- Repeated allocations of small, fixed-size objects.
+- Mixed allocation sizes.
+- Different allocation and deallocation patterns.
+- High allocation counts and memory exhaustion.
+- Fragmented memory layouts.
+- Reset-heavy arena workloads.
+- Concurrent allocation workloads after thread safety is implemented.
+
+### Metrics to Measure
+
+- Allocation and deallocation latency.
+- Total execution time.
+- Throughput in operations per second.
+- Memory utilization.
+- Internal and external fragmentation.
+- Metadata overhead.
+- Allocation failures under constrained memory budgets.
+
+For meaningful comparisons, use the same workloads across implementations, repeat experiments, and report the methodology and results.
+
+## Future Enhancements
+
+### 1. STL-Compatible Allocators
+
+Implement allocator adapters that allow compatible custom allocators to be used with standard containers such as `std::vector`, `std::list`, and `std::unordered_map`.
+
+Investigate the standard allocator requirements and how container allocation patterns affect performance.
+
+### 2. Thread-Safe Allocators
+
+Add support for concurrent allocation and deallocation.
+
+For example, two threads using a linear allocator simultaneously could read the same offset and attempt to allocate overlapping memory regions unless the operation is synchronized.
+
+Potential approaches include:
+
+- Mutex-based synchronization.
+- Atomic bump-pointer allocation where alignment and bounds checks are handled safely.
+- Per-thread arenas.
+- Thread-local pools and reduced contention.
+
+Benchmark the performance cost of synchronization and compare it with approaches that minimize shared state.
+
+### 3. Error Handling
+
+Define a centralized error-code enumeration for common failure conditions, such as:
+
+- Out of memory.
+- Invalid alignment.
+- Invalid or foreign pointer.
+- Double free.
+- Unsupported allocator operation.
+- Invalid configuration.
+- Initialization failure.
+
+Design a consistent error-reporting mechanism across allocator implementations.
+
+### 4. Internal Fragmentation Analysis
+
+Track the difference between requested allocation sizes and the actual memory consumed by each allocation.
+
+For example, an allocation requesting 13 bytes might require more space because of alignment or metadata.
+
+Potential improvements:
+
+- Record requested size, usable size, and total consumed size.
+- Track alignment and metadata overhead.
+- Analyze recurring allocation patterns.
+- Investigate whether unused space can be reused safely.
+- Compare utilization across allocation strategies.
+
+Any reuse mechanism must preserve allocation boundaries, object alignment, and memory safety.
+
+### 5. Advanced Allocator Implementations
+
+Create additional modules inspired by production memory allocators, including Google's TCMalloc.
+
+Investigate concepts such as size classes, thread-local caches, central free lists, and page-level allocation. Implement these as independent strategies that conform to the project's common interface.
+
+**Reference:** [A Deep Dive into Building a Memory Allocator](https://medium.com/@kondam.reddy/a-deep-dive-into-building-a-memory-allocator-dd5333a98195)
+
+### 6. Memory Layout and Structure Padding
+
+Study how structure layout, alignment, and padding influence allocator metadata overhead and usable memory.
+
+Experiment with different metadata layouts and measure their impact rather than assuming that smaller structures always lead to better overall performance.
+
+### 7. Memory Visualization and Diagnostics
+
+Extend the memory-map functionality to show:
+
+- Allocated and free regions.
+- Block sizes and alignment adjustments.
+- Free-list structure.
+- Fragmentation over time.
+- Allocation and deallocation history.
+
+## Project Goals
+
+The long-term goal is to build an extensible memory allocation framework that combines multiple allocation strategies, a configurable interface, correctness testing, performance benchmarking, and detailed memory diagnostics.
+
+The project is also intended as a learning exercise in low-level C++ programming, memory management, data structures, object-oriented design, and performance engineering.
