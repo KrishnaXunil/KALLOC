@@ -280,6 +280,9 @@ PoolAllocator(size_t chunk_size,size_t memory_size): Allocator(memory_size),m_ch
 
 //in linear allocator alignment gets taken care of at runtime too.....
 void* Allocate(size_t size,size_t alignment=8) override {
+    
+    //VIMP*************************************
+    //we will store the padding value just before the users pointer, if no padding then no storage will be corrupted........
 
     if(chunk_head==nullptr){
         std::cerr << "CRITICAL ERROR: No memory left!" << std::endl;
@@ -301,6 +304,7 @@ void* Allocate(size_t size,size_t alignment=8) override {
 
     else{
        void* memory_to_be_given=chunk_head;
+       chunk_head=reinterpret_cast<chunk*>(reinterpret_cast<char*>(chunk_head)+size);
        chunk_head=actual_head->next;
        return memory_to_be_given;
     }
