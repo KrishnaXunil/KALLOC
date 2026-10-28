@@ -10,6 +10,9 @@ The initial step-by-step development plan was generated with the help of **Googl
 
 ## Project Overview
 
+To run the code use this command:
+g++ -std=c++20 -O2 -pthread allocator_benchmark_all.cpp -o allocator_benchmark_all && ./allocator_benchmark_all
+
 Standard dynamic memory allocation in C++ is typically handled through `new`/`delete` or the underlying memory management facilities. However, different applications have different allocation patterns, and a single allocation strategy may not be optimal for every workload.
 
 This project explores how custom allocators can improve control over memory usage, allocation overhead, fragmentation, and allocation patterns.
